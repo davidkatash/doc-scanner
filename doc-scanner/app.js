@@ -219,6 +219,15 @@ function background(rgb) {
   return bg;
 }
 
+// Unsharp mask: out = 1.8 * out - 0.8 * blurred
+function sharpen(mat) {
+  const blur = new cv.Mat();
+  try {
+    cv.GaussianBlur(mat, blur, new cv.Size(0, 0), 1.6);
+    cv.addWeighted(mat, 1.8, blur, -0.8, 0, mat);
+  } finally { blur.delete(); }
+}
+
 function enhance(canvas, m) {
   if (m === 'orig') return canvas;
   const src = cv.imread(canvas), rgb = new cv.Mat(), norm = new cv.Mat(), out = new cv.Mat();
@@ -229,12 +238,13 @@ function enhance(canvas, m) {
     bg = background(rgb);
     cv.divide(rgb, bg, norm, 255, -1);
     if (m === 'color') {
-      cv.convertScaleAbs(norm, out, 1.12, -14);
+      cv.convertScaleAbs(norm, out, 1.1, 8);
+      sharpen(out);
     } else {
       const g = new cv.Mat();
       cv.cvtColor(norm, g, cv.COLOR_RGB2GRAY);
       if (m === 'bw') cv.adaptiveThreshold(g, out, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 41, 14);
-      else cv.convertScaleAbs(g, out, 1.12, -14);
+      else { cv.convertScaleAbs(g, out, 1.1, 8); sharpen(out); }
       g.delete();
     }
     cv.imshow(res, out);

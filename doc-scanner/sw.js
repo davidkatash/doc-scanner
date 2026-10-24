@@ -1,4 +1,4 @@
-const V = 'scan-v3';
+const V = 'scan-v4';
 const SHELL = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
   'lib/opencv.js', 'lib/jspdf.umd.min.js'];
 
