@@ -61,42 +61,69 @@ function orderCorners(pts) {
   return [tl, tr, br, bl];
 }
 
+// Largest convex outline in a binary image that looks like a page.
+// Tries to fit 4 points with growing tolerance (curled paper); optionally falls back to a rotated rectangle.
+function pageQuad(bin, minArea, maxArea, allowRect) {
+  const contours = new cv.MatVector(), hier = new cv.Mat();
+  let best = null, bestArea = 0;
+  try {
+    cv.findContours(bin, contours, hier, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
+    for (let i = 0; i < contours.size(); i++) {
+      const c = contours.get(i), hull = new cv.Mat();
+      try {
+        cv.convexHull(c, hull);
+        const area = cv.contourArea(hull);
+        if (area < minArea || area > maxArea || area <= bestArea) continue;
+        let pts = null;
+        const peri = cv.arcLength(hull, true);
+        for (const eps of [0.02, 0.03, 0.045, 0.065]) {
+          const ap = new cv.Mat();
+          cv.approxPolyDP(hull, ap, eps * peri, true);
+          if (ap.rows === 4) {
+            pts = [];
+            for (let j = 0; j < 4; j++) pts.push({ x: ap.data32S[j * 2], y: ap.data32S[j * 2 + 1] });
+          }
+          ap.delete();
+          if (pts) break;
+        }
+        if (!pts && allowRect) pts = cv.RotatedRect.points(cv.minAreaRect(hull)).map(p => ({ x: p.x, y: p.y }));
+        if (pts) { best = pts; bestArea = area; }
+      } finally { c.delete(); hull.delete(); }
+    }
+  } finally { contours.delete(); hier.delete(); }
+  return best;
+}
+
 function detectCorners(canvas) {
   const k = Math.min(1, 700 / Math.max(canvas.width, canvas.height));
   const small = document.createElement('canvas');
   small.width = Math.round(canvas.width * k); small.height = Math.round(canvas.height * k);
   small.getContext('2d').drawImage(canvas, 0, 0, small.width, small.height);
 
-  const m = cv.imread(small), g = new cv.Mat(), e = new cv.Mat();
+  const m = cv.imread(small), g = new cv.Mat(), e = new cv.Mat(), t = new cv.Mat();
   const kern = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-  const contours = new cv.MatVector(), hier = new cv.Mat();
-  let best = null, bestArea = 0;
+  const total = small.width * small.height, minArea = total * 0.15, maxArea = total * 0.97;
+  let best = null;
   try {
     cv.cvtColor(m, g, cv.COLOR_RGBA2GRAY);
     cv.GaussianBlur(g, g, new cv.Size(5, 5), 0);
+    // 1) edges
     cv.Canny(g, e, 50, 150);
     cv.dilate(e, e, kern);
-    cv.findContours(e, contours, hier, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE);
-    const minArea = small.width * small.height * 0.2;
-    for (let i = 0; i < contours.size(); i++) {
-      const c = contours.get(i);
-      const hull = new cv.Mat(), ap = new cv.Mat();
-      cv.convexHull(c, hull);
-      const area = cv.contourArea(hull);
-      if (area > minArea && area > bestArea) {
-        cv.approxPolyDP(hull, ap, 0.02 * cv.arcLength(hull, true), true);
-        if (ap.rows === 4) {
-          best = [];
-          for (let j = 0; j < 4; j++) best.push({ x: ap.data32S[j * 2] / k, y: ap.data32S[j * 2 + 1] / k });
-          bestArea = area;
-        }
-      }
-      c.delete(); hull.delete(); ap.delete();
+    best = pageQuad(e, minArea, maxArea, false);
+    // 2) bright paper against a darker background
+    if (!best) {
+      cv.threshold(g, t, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+      cv.morphologyEx(t, t, cv.MORPH_OPEN, kern);
+      cv.morphologyEx(t, t, cv.MORPH_CLOSE, cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(15, 15)));
+      best = pageQuad(t, minArea, maxArea, true);
     }
+    // 3) last resort: rotated rectangle around the edges
+    if (!best) best = pageQuad(e, minArea, maxArea, true);
   } finally {
-    m.delete(); g.delete(); e.delete(); kern.delete(); contours.delete(); hier.delete();
+    m.delete(); g.delete(); e.delete(); t.delete(); kern.delete();
   }
-  if (best) return orderCorners(best);
+  if (best) return orderCorners(best.map(p => ({ x: p.x / k, y: p.y / k })));
   const mx = canvas.width * 0.06, my = canvas.height * 0.06;     // nothing found: inset rectangle
   return [{ x: mx, y: my }, { x: canvas.width - mx, y: my },
           { x: canvas.width - mx, y: canvas.height - my }, { x: mx, y: canvas.height - my }];
