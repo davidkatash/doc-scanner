@@ -238,13 +238,13 @@ function enhance(canvas, m) {
     bg = background(rgb);
     cv.divide(rgb, bg, norm, 255, -1);
     if (m === 'color') {
-      cv.convertScaleAbs(norm, out, 1.1, 8);
+      cv.convertScaleAbs(norm, out, 1.1, -4);
       sharpen(out);
     } else {
       const g = new cv.Mat();
       cv.cvtColor(norm, g, cv.COLOR_RGB2GRAY);
       if (m === 'bw') cv.adaptiveThreshold(g, out, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 41, 14);
-      else { cv.convertScaleAbs(g, out, 1.1, 8); sharpen(out); }
+      else { cv.convertScaleAbs(g, out, 1.1, -4); sharpen(out); }
       g.delete();
     }
     cv.imshow(res, out);
