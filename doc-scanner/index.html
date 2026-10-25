@@ -41,6 +41,13 @@ button:disabled{opacity:.45}
   font-size:12px;padding:2px 8px}
 .page .x{position:absolute;top:4px;left:4px;width:30px;height:30px;padding:0;border-radius:99px;
   background:rgba(0,0,0,.65);color:#fff;border:0;font-size:18px;line-height:30px}
+#note{font:inherit;margin:8px 16px 0;padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink)}
+#hist,#histBack{padding:8px 12px;font-size:14px}
+#hlist{flex:1;overflow:auto;padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+.hrow{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px}
+.hrow img{width:48px;height:64px;object-fit:contain;background:#fff;border-radius:4px}
+.hrow .ht{flex:1;font-size:14px}
+.hrow button{padding:8px 12px;font-size:14px}
 .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:60px 20px}
 #stage{flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:8px;background:#0b0c0f}
 #stage canvas{touch-action:none;max-width:100%;max-height:100%}
@@ -59,9 +66,10 @@ button:disabled{opacity:.45}
 <body>
 
 <section id="home" class="screen on">
-  <header><h1>סורק חשבוניות</h1><span id="engine">טוען מנוע זיהוי…</span></header>
+  <header><h1>סורק חשבוניות</h1><span id="engine">טוען מנוע זיהוי…</span><button id="hist">🕘 היסטוריה</button></header>
   <div id="grid"></div>
   <div id="err"></div>
+  <input id="note" type="text" maxlength="200" placeholder="הערה לחשבונית (תודפס באדום מעל העמוד הראשון)" autocomplete="off">
   <div class="bar">
     <button id="shoot" class="primary">📷 צלם עמוד</button>
     <button id="pick">🖼 מהגלריה</button>
@@ -69,6 +77,11 @@ button:disabled{opacity:.45}
   </div>
   <input id="cam" type="file" accept="image/*" capture="environment" hidden>
   <input id="gal" type="file" accept="image/*" hidden>
+</section>
+
+<section id="history" class="screen">
+  <header><h1>נשלחו</h1><button id="histBack">חזרה</button></header>
+  <div id="hlist"></div>
 </section>
 
 <section id="edit" class="screen">
