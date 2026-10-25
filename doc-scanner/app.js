@@ -273,12 +273,14 @@ function renderResult() {
 function blobOf(canvas, q = 0.9) {
   return new Promise(r => canvas.toBlob(r, 'image/jpeg', q));
 }
+const EMPTY_DEFAULT = 'עוד אין עמודים. לחץ "צלם עמוד" כדי להתחיל.';
+let emptyMsg = EMPTY_DEFAULT;
 function renderGrid() {
   const grid = $('#grid');
   grid.replaceChildren();
   if (!pages.length) {
     const e = document.createElement('div');
-    e.className = 'empty'; e.textContent = 'עוד אין עמודים. לחץ "צלם עמוד" כדי להתחיל.';
+    e.className = 'empty'; e.textContent = emptyMsg;
     grid.append(e);
   }
   pages.forEach((p, i) => {
@@ -293,11 +295,38 @@ function renderGrid() {
 }
 
 // ---------- PDF ----------
+// Adds a white strip above the page with the note in red, so the invoice itself stays untouched.
+async function withNote(p, note) {
+  const bmp = await createImageBitmap(p.blob);
+  const size = Math.round(p.w * 0.04), pad = Math.round(size * 0.5), maxW = p.w - 2 * pad;
+  const c = document.createElement('canvas'), x = c.getContext('2d');
+  c.width = p.w;
+  x.font = `bold ${size}px system-ui, Arial, sans-serif`;
+  const lines = [];
+  let line = '';
+  for (const word of note.split(/\s+/).filter(Boolean)) {
+    const t = line ? line + ' ' + word : word;
+    if (line && x.measureText(t).width > maxW) { lines.push(line); line = word; } else line = t;
+  }
+  if (line) lines.push(line);
+  const strip = Math.round(pad * 2 + lines.length * size * 1.3);
+  c.height = p.h + strip;
+  x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+  x.drawImage(bmp, 0, strip);
+  if (bmp.close) bmp.close();
+  x.font = `bold ${size}px system-ui, Arial, sans-serif`;
+  x.direction = 'rtl'; x.textAlign = 'right'; x.textBaseline = 'top'; x.fillStyle = '#d00000';
+  lines.forEach((l, i) => x.fillText(l, p.w - pad, pad + i * size * 1.3));
+  return { blob: await blobOf(c), w: c.width, h: c.height };
+}
+
 async function buildPdf() {
   const { jsPDF } = window.jspdf;
   const W = 210;                                       // mm; each page keeps the photographed aspect ratio
+  const note = $('#note').value.trim();
   let pdf = null;
-  for (const p of pages) {
+  for (const [i, src] of pages.entries()) {
+    const p = i === 0 && note ? await withNote(src, note) : src;
     const H = W * p.h / p.w;
     if (!pdf) pdf = new jsPDF({ unit: 'mm', format: [W, H], orientation: H >= W ? 'p' : 'l' });
     else pdf.addPage([W, H], H >= W ? 'p' : 'l');
@@ -312,17 +341,71 @@ function fileName() {
   return `invoice_${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}.pdf`;
 }
 
-async function sharePdf() {
-  const blob = await busy('יוצר PDF…', buildPdf);
-  const file = new File([blob], fileName(), { type: 'application/pdf' });
+// Resolves true when the file was handed over (shared or downloaded), false when the user cancelled.
+async function shareFile(file) {
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file] }); return; }
-    catch (e) { if (e.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file] }); return true; }
+    catch (e) { if (e.name === 'AbortError') return false; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(file); a.download = file.name; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  return true;
 }
+
+async function sharePdf() {
+  const blob = await busy('יוצר PDF…', buildPdf);
+  const file = new File([blob], fileName(), { type: 'application/pdf' });
+  if (!await shareFile(file)) return;
+  try {
+    await archive(file, blob);
+  } catch (e) { console.error(e); showError('הקובץ נשלח, אבל לא נשמר בהיסטוריה: ' + e.message); return; }
+  pages.forEach(p => URL.revokeObjectURL(p.thumb));
+  pages.length = 0;
+  $('#note').value = '';
+  emptyMsg = 'נשלח ✓ המסמך נשמר בהיסטוריה.';
+  renderGrid();
+}
+
+// ---------- History of sent documents (IndexedDB, stays on this phone) ----------
+const HISTORY_MAX = 30;
+const db = new Promise((ok, no) => {
+  const r = indexedDB.open('scanner', 1);
+  r.onupgradeneeded = () => r.result.createObjectStore('sent', { keyPath: 'id' });
+  r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+});
+async function sent(mode, fn) {
+  const d = await db;
+  return new Promise((ok, no) => {
+    const tx = d.transaction('sent', mode), rq = fn(tx.objectStore('sent'));
+    tx.oncomplete = () => ok(rq && rq.result); tx.onerror = () => no(tx.error);
+  });
+}
+async function archive(file, blob) {
+  await sent('readwrite', s => s.put({ id: Date.now(), name: file.name, count: pages.length, pdf: blob, thumb: pages[0].thumbBlob }));
+  const keys = (await sent('readonly', s => s.getAllKeys())).sort((a, b) => b - a);
+  for (const k of keys.slice(HISTORY_MAX)) await sent('readwrite', s => s.delete(k));
+}
+async function renderHistory() {
+  const list = $('#hlist'), items = (await sent('readonly', s => s.getAll())).sort((a, b) => b.id - a.id);
+  list.replaceChildren();
+  if (!items.length) {
+    const e = document.createElement('div'); e.className = 'empty'; e.textContent = 'עוד לא נשלחו מסמכים.'; list.append(e);
+  }
+  for (const it of items) {
+    const row = document.createElement('div'); row.className = 'hrow';
+    const img = document.createElement('img'); img.src = URL.createObjectURL(it.thumb); img.onload = () => URL.revokeObjectURL(img.src);
+    const t = document.createElement('div'); t.className = 'ht';
+    t.textContent = new Date(it.id).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) + ' · ' + it.count + ' עמ׳';
+    const again = document.createElement('button'); again.textContent = 'שלח שוב';
+    again.onclick = () => shareFile(new File([it.pdf], it.name, { type: 'application/pdf' })).catch(e => showError(e.message));
+    const del = document.createElement('button'); del.textContent = 'מחק';
+    del.onclick = async () => { await sent('readwrite', s => s.delete(it.id)); renderHistory(); };
+    row.append(img, t, again, del); list.append(row);
+  }
+}
+$('#hist').onclick = () => { show('history'); renderHistory().catch(e => showError(e.message)); };
+$('#histBack').onclick = () => show('home');
 
 // ---------- Wiring ----------
 async function onPhoto(file) {
@@ -364,8 +447,9 @@ $('#resOk').onclick = async () => {
   const blob = await blobOf(view);
   const t = document.createElement('canvas'); t.width = 260; t.height = Math.round(260 * view.height / view.width);
   t.getContext('2d').drawImage(view, 0, 0, t.width, t.height);
-  const thumb = URL.createObjectURL(await blobOf(t, 0.8));
-  pages.push({ blob, w: view.width, h: view.height, thumb });
+  const thumbBlob = await blobOf(t, 0.8);
+  pages.push({ blob, w: view.width, h: view.height, thumb: URL.createObjectURL(thumbBlob), thumbBlob });
+  emptyMsg = EMPTY_DEFAULT;
   renderGrid(); show('home');
 };
 
