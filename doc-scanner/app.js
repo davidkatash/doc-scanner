@@ -298,7 +298,7 @@ function renderGrid() {
 // Adds a white strip above the page with the note in red, so the invoice itself stays untouched.
 async function withNote(p, note) {
   const bmp = await createImageBitmap(p.blob);
-  const size = Math.round(p.w * 0.04), pad = Math.round(size * 0.5), maxW = p.w - 2 * pad;
+  const size = Math.round(p.w * 0.06), pad = Math.round(size * 0.5), maxW = p.w - 2 * pad;
   const c = document.createElement('canvas'), x = c.getContext('2d');
   c.width = p.w;
   x.font = `bold ${size}px system-ui, Arial, sans-serif`;
@@ -315,8 +315,8 @@ async function withNote(p, note) {
   x.drawImage(bmp, 0, strip);
   if (bmp.close) bmp.close();
   x.font = `bold ${size}px system-ui, Arial, sans-serif`;
-  x.direction = 'rtl'; x.textAlign = 'right'; x.textBaseline = 'top'; x.fillStyle = '#d00000';
-  lines.forEach((l, i) => x.fillText(l, p.w - pad, pad + i * size * 1.3));
+  x.direction = 'rtl'; x.textAlign = 'center'; x.textBaseline = 'top'; x.fillStyle = '#d00000';
+  lines.forEach((l, i) => x.fillText(l, p.w / 2,pad + i * size * 1.3));
   return { blob: await blobOf(c), w: c.width, h: c.height };
 }
 
