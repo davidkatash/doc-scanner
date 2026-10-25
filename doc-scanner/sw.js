@@ -1,6 +1,6 @@
-const V = 'scan-v8';
+const V = 'scan-v9';
 const SHELL = ['./', 'index.html', 'app.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
-  'lib/opencv.js', 'lib/jspdf.umd.min.js'];
+  'lib/opencv.js', 'lib/jspdf.umd.min.js', 'fonts/gyadbr.ttf'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(V).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

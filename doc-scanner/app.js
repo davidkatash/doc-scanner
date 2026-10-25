@@ -299,9 +299,11 @@ function renderGrid() {
 async function withNote(p, note) {
   const bmp = await createImageBitmap(p.blob);
   const size = Math.round(p.w * 0.06), pad = Math.round(size * 0.5), maxW = p.w - 2 * pad;
+  const FONT = `${size}px GutmannYadBrush, system-ui, Arial, sans-serif`;
+  await document.fonts.load(FONT, note).catch(() => {});
   const c = document.createElement('canvas'), x = c.getContext('2d');
   c.width = p.w;
-  x.font = `bold ${size}px system-ui, Arial, sans-serif`;
+  x.font = FONT;
   const lines = [];
   let line = '';
   for (const word of note.split(/\s+/).filter(Boolean)) {
@@ -314,7 +316,7 @@ async function withNote(p, note) {
   x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
   x.drawImage(bmp, 0, strip);
   if (bmp.close) bmp.close();
-  x.font = `bold ${size}px system-ui, Arial, sans-serif`;
+  x.font = FONT;
   x.direction = 'rtl'; x.textAlign = 'center'; x.textBaseline = 'top'; x.fillStyle = '#d00000';
   lines.forEach((l, i) => x.fillText(l, p.w / 2,pad + i * size * 1.3));
   return { blob: await blobOf(c), w: c.width, h: c.height };
